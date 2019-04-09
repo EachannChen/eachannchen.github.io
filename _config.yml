@@ -3,7 +3,7 @@
 ## Source: https://github.com/hexojs/hexo/
 
 # Site
-title: Hexo
+title: river
 subtitle:
 description:
 keywords:
@@ -86,12 +86,15 @@ deploy:
 menu:
   主页: /
   所有文章: /archives
-  # 旧事: /tags/旧事
+  归档: /archives/index.html
+
 # SubNav
 subnav:
   github: "https://github.com/litten"
   weibo: "http://weibo.com/litten225"
   rss: "http://feed.feedsky.com/litten"
+  jianshu: "https://www.jianshu.com/u/e7b173f756f4"
+
   # facebook: "/"
   # google: "/"
   # twitter: "/"
