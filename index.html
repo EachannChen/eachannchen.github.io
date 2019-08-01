@@ -49,6 +49,8 @@
 		  <h1 class="header-author"><a href="/">Eachann Chen</a></h1>
 		</hgroup>
 		
+		<p class="header-subtitle">Are you hungry ？</p>
+		
 
 		<nav class="header-menu">
 			<ul>
@@ -103,6 +105,8 @@
 			  <h1 class="header-author js-header-author">Eachann Chen</h1>
 			</hgroup>
 			
+			<p class="header-subtitle"><i class="icon icon-quo-left"></i>Are you hungry ？<i class="icon icon-quo-right"></i></p>
+			
 			
 			
 				
@@ -145,6 +149,314 @@
           </div>
           <div id="js-content" class="content-ll">
             
+  
+    <article id="post-event源码来一波" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2019/07/31/event源码来一波/">event源码来一波</a>
+    </h1>
+  
+
+        
+        <a href="/2019/07/31/event源码来一波/" class="archive-article-date">
+  	<time datetime="2019-07-31T01:07:53.000Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2019-07-31</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <p>node 的事件模块 EventEmitter，是node核心模块的api基础，stream、fs等都基于此。这篇文章就扒一下event的源码，了解其原理。</p>
+<h4 id="构造函数"><a href="#构造函数" class="headerlink" title="构造函数"></a>构造函数</h4><p>event的构造函数很简单，只是调用初始化函数，并绑定了this，指定实例对象。</p>
+<figure class="highlight js"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">function</span> <span class="title">EventEmitter</span>(<span class="params"></span>) </span>&#123;</span><br><span class="line">  EventEmitter.init.call(<span class="keyword">this</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>初始化函数只是初始化了对象属性。<br><figure class="highlight js"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">EventEmitter.init = <span class="function"><span class="keyword">function</span>(<span class="params"></span>) </span>&#123;</span><br><span class="line">  <span class="keyword">if</span> (<span class="keyword">this</span>._events === <span class="literal">undefined</span> ||</span><br><span class="line">      <span class="keyword">this</span>._events === <span class="built_in">Object</span>.getPrototypeOf(<span class="keyword">this</span>)._events) &#123;</span><br><span class="line">    <span class="keyword">this</span>._events = <span class="built_in">Object</span>.create(<span class="literal">null</span>);</span><br><span class="line">    <span class="keyword">this</span>._eventsCount = <span class="number">0</span>;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="keyword">this</span>._maxListeners = <span class="keyword">this</span>._maxListeners || <span class="literal">undefined</span>;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure></p>
+<p>这里面用到了三个属性，_events，_eventsCount，_maxListeners</p>
+<p>1、_events =&gt; 一个挂载属性，空对象，负责收集所有类型的事件</p>
+<p>2、_eventsCount =&gt; 记录目前绑定事件类型的数量</p>
+<p>3、_maxListeners =&gt; 同类型事件listener数量限制</p>
+<h4 id="绑定事件-addListener-on"><a href="#绑定事件-addListener-on" class="headerlink" title="绑定事件(addListener,on)"></a>绑定事件(addListener,on)</h4><p>addListener和on函数对指定事件增加监听函数其实是封装一样的函数_addListener。</p>
+<figure class="highlight js"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">EventEmitter.prototype.on = EventEmitter.prototype.addListener;</span><br><span class="line"></span><br><span class="line">EventEmitter.prototype.addListener = <span class="function"><span class="keyword">function</span> <span class="title">addListener</span>(<span class="params">type, listener</span>) </span>&#123;</span><br><span class="line">  <span class="keyword">return</span> _addListener(<span class="keyword">this</span>, type, listener, <span class="literal">false</span>);</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<p>接下来就分析下_addListener的源码。</p>
+<figure class="highlight js"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * 事件绑定方法</span></span><br><span class="line"><span class="comment"> * @param &#123;Object&#125; target 目标对象</span></span><br><span class="line"><span class="comment"> * @param &#123;String&#125; type 事件名称</span></span><br><span class="line"><span class="comment"> * @param &#123;Function&#125; listener 回调函数</span></span><br><span class="line"><span class="comment"> * @param &#123;Boolean&#125; prepend 是否插入</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="function"><span class="keyword">function</span> <span class="title">_addListener</span>(<span class="params">target, type, listener, prepend</span>) </span>&#123;</span><br><span class="line">  <span class="keyword">var</span> m;</span><br><span class="line">  <span class="keyword">var</span> events;<span class="comment">//所有事件的对象</span></span><br><span class="line">  <span class="keyword">var</span> existing;<span class="comment">//事件type对应的回调函数</span></span><br><span class="line"></span><br><span class="line">  checkListener(listener);</span><br><span class="line"></span><br><span class="line">  events = target._events;</span><br><span class="line">  <span class="keyword">if</span> (events === <span class="literal">undefined</span>) &#123;</span><br><span class="line">    events = target._events = <span class="built_in">Object</span>.create(<span class="literal">null</span>);</span><br><span class="line">    target._eventsCount = <span class="number">0</span>;</span><br><span class="line">  &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    <span class="comment">// To avoid recursion in the case that type === "newListener"! Before</span></span><br><span class="line">    <span class="comment">// adding it to the listeners, first emit "newListener".</span></span><br><span class="line">    <span class="keyword">if</span> (events.newListener !== <span class="literal">undefined</span>) &#123;<span class="comment">//有newListener事件，要触发事件给newListener回调函数</span></span><br><span class="line">      target.emit(<span class="string">'newListener'</span>, type,</span><br><span class="line">                  listener.listener ? listener.listener : listener);</span><br><span class="line"></span><br><span class="line">      <span class="comment">// Re-assign `events` because a newListener handler could have caused the</span></span><br><span class="line">      <span class="comment">// this._events to be assigned to a new object</span></span><br><span class="line">      events = target._events;</span><br><span class="line">    &#125;</span><br><span class="line">    existing = events[type];</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line"> <span class="comment">// more</span></span><br><span class="line">  <span class="keyword">return</span> target;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这部分抽离了函数的主逻辑，获取对象的_events属性。无论是EventEmitter.call(this)，还是new EventEmitter()，都会初始化一个事件对象集合属性。如果未取到，则参照init函数，初始化一个对象挂载。这部分就是为取到事件type的回调函数。</p>
+<figure class="highlight js"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// more</span></span><br><span class="line"><span class="keyword">if</span> (existing === <span class="literal">undefined</span>) &#123;</span><br><span class="line">    <span class="comment">// Optimize the case of one listener. Don't need the extra array object.</span></span><br><span class="line">    events[type] = listener;</span><br><span class="line">    ++target._eventsCount;</span><br><span class="line">  &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> (<span class="keyword">typeof</span> existing === <span class="string">'function'</span>) &#123;</span><br><span class="line">      <span class="comment">// Adding the second element, need to change to array.</span></span><br><span class="line">      existing = events[type] =</span><br><span class="line">        prepend ? [listener, existing] : [existing, listener];</span><br><span class="line">      <span class="comment">// If we've already got an array, just append.</span></span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (prepend) &#123;</span><br><span class="line">      existing.unshift(listener);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">      existing.push(listener);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Check for listener leak</span></span><br><span class="line">    m = _getMaxListeners(target);</span><br><span class="line">    <span class="keyword">if</span> (m &gt; <span class="number">0</span> &amp;&amp; existing.length &gt; m &amp;&amp; !existing.warned) &#123;</span><br><span class="line">      existing.warned = <span class="literal">true</span>;</span><br><span class="line">      <span class="comment">// No error code for this since it is a Warning</span></span><br><span class="line">      <span class="comment">// eslint-disable-next-line no-restricted-syntax</span></span><br><span class="line">      <span class="keyword">const</span> w = <span class="keyword">new</span> <span class="built_in">Error</span>(<span class="string">'Possible EventEmitter memory leak detected. '</span> +</span><br><span class="line">                          <span class="string">`<span class="subst">$&#123;existing.length&#125;</span> <span class="subst">$&#123;<span class="built_in">String</span>(type)&#125;</span> listeners `</span> +</span><br><span class="line">                          <span class="string">'added. Use emitter.setMaxListeners() to '</span> +</span><br><span class="line">                          <span class="string">'increase limit'</span>);</span><br><span class="line">      w.name = <span class="string">'MaxListenersExceededWarning'</span>;</span><br><span class="line">      w.emitter = target;</span><br><span class="line">      w.type = type;</span><br><span class="line">      w.count = existing.length;</span><br><span class="line">      process.emitWarning(w);</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// more</span></span><br></pre></td></tr></table></figure>
+<p>这部分开始绑定回调函数到对应的事件，事件名称type为key，如果只有一个回调函数，回调函数为value保存。已有回调的，则根据前置标识prepend来决定是否放在数组第一位（prependListener函数正是prepend为true的情况），value为回调函数数组。接下里的部分是为了防止内存泄漏，对事件的监听函数的数量给以警告提示，默认是10。如果要提高上限，setMaxListeners(n)可是设置listener数量限制。</p>
+<figure class="highlight js"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">EventEmitter.prototype.prependListener =</span><br><span class="line">    <span class="function"><span class="keyword">function</span> <span class="title">prependListener</span>(<span class="params">type, listener</span>) </span>&#123;</span><br><span class="line">      <span class="keyword">return</span> _addListener(<span class="keyword">this</span>, type, listener, <span class="literal">true</span>);</span><br><span class="line">    &#125;;</span><br></pre></td></tr></table></figure>
+<h4 id="一次绑定事件-once"><a href="#一次绑定事件-once" class="headerlink" title="一次绑定事件(once)"></a>一次绑定事件(once)</h4><p>对于触发一次的监听函数，这种事件绑定关系要求在时间触发一下，就要从事件监听器列表中删除。</p>
+<figure class="highlight js"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">EventEmitter.prototype.once = <span class="function"><span class="keyword">function</span> <span class="title">once</span>(<span class="params">type, listener</span>) </span>&#123;</span><br><span class="line">  checkListener(listener);</span><br><span class="line"></span><br><span class="line">  <span class="keyword">this</span>.on(type, _onceWrap(<span class="keyword">this</span>, type, listener));</span><br><span class="line">  <span class="keyword">return</span> <span class="keyword">this</span>;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<p>这里对监听函数listener做了一个封装再插入事件type的监听器中。<br><figure class="highlight js"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">function</span> <span class="title">_onceWrap</span>(<span class="params">target, type, listener</span>) </span>&#123;</span><br><span class="line">  <span class="keyword">var</span> state = &#123; <span class="attr">fired</span>: <span class="literal">false</span>, <span class="attr">wrapFn</span>: <span class="literal">undefined</span>, target, type, listener &#125;;</span><br><span class="line">  <span class="keyword">var</span> wrapped = onceWrapper.bind(state);</span><br><span class="line">  wrapped.listener = listener;<span class="comment">//原生listener</span></span><br><span class="line">  state.wrapFn = wrapped;</span><br><span class="line">  <span class="keyword">return</span> wrapped;<span class="comment">//封装后的事件函数，绑定或删除指的都是这个函数</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">function</span> <span class="title">onceWrapper</span>(<span class="params">...args</span>) </span>&#123;</span><br><span class="line"><span class="comment">// 这里所有的this指向上面的state对象</span></span><br><span class="line">  <span class="comment">// args来源于触发时候给的参数</span></span><br><span class="line">  <span class="keyword">if</span> (!<span class="keyword">this</span>.fired) &#123;</span><br><span class="line">    <span class="keyword">this</span>.target.removeListener(<span class="keyword">this</span>.type, <span class="keyword">this</span>.wrapFn);<span class="comment">//删除封装后的监听函数</span></span><br><span class="line">    <span class="keyword">this</span>.fired = <span class="literal">true</span>;</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">Reflect</span>.apply(<span class="keyword">this</span>.listener, <span class="keyword">this</span>.target, args);<span class="comment">//调用原生listener函数</span></span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></p>
+<p>在事件触发后，调用的是封装后的闭包函数wrapped。再通过wrapped，删除原先绑定的监听器，这里指的不是原生listener，而是封装后的wrapped，最后触发内部的原生listener。实现了只处理一次的效果。</p>
+<h4 id="事件触发（emit）"><a href="#事件触发（emit）" class="headerlink" title="事件触发（emit）"></a>事件触发（emit）</h4><p>emit部分主要区分了error事件和普通的事件，事件的监听器如果一个监听函数的话直接调用，如果是数组的话依次执行。</p>
+<figure class="highlight js"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br></pre></td><td class="code"><pre><span class="line">EventEmitter.prototype.emit = <span class="function"><span class="keyword">function</span> <span class="title">emit</span>(<span class="params">type, ...args</span>) </span>&#123;</span><br><span class="line">  <span class="keyword">let</span> doError = (type === <span class="string">'error'</span>);</span><br><span class="line"></span><br><span class="line">  <span class="keyword">const</span> events = <span class="keyword">this</span>._events;</span><br><span class="line">  <span class="keyword">if</span> (events !== <span class="literal">undefined</span>)</span><br><span class="line">    doError = (doError &amp;&amp; events.error === <span class="literal">undefined</span>);</span><br><span class="line">  <span class="keyword">else</span> <span class="keyword">if</span> (!doError)</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">false</span>;</span><br><span class="line"></span><br><span class="line">  <span class="comment">// If there is no 'error' event listener then throw.</span></span><br><span class="line">  <span class="keyword">if</span> (doError) &#123;</span><br><span class="line">    <span class="keyword">let</span> er;</span><br><span class="line">    <span class="keyword">if</span> (args.length &gt; <span class="number">0</span>)</span><br><span class="line">      er = args[<span class="number">0</span>];</span><br><span class="line">    <span class="keyword">if</span> (er <span class="keyword">instanceof</span> <span class="built_in">Error</span>) &#123;</span><br><span class="line">      <span class="keyword">try</span> &#123;</span><br><span class="line">        <span class="keyword">const</span> &#123; kExpandStackSymbol &#125; = <span class="built_in">require</span>(<span class="string">'internal/util'</span>);</span><br><span class="line">        <span class="keyword">const</span> capture = &#123;&#125;;</span><br><span class="line">        <span class="built_in">Error</span>.captureStackTrace(capture, EventEmitter.prototype.emit);</span><br><span class="line">        <span class="built_in">Object</span>.defineProperty(er, kExpandStackSymbol, &#123;</span><br><span class="line">          value: enhanceStackTrace.bind(<span class="literal">null</span>, er, capture),</span><br><span class="line">          configurable: <span class="literal">true</span></span><br><span class="line">        &#125;);</span><br><span class="line">      &#125; <span class="keyword">catch</span> &#123;&#125;</span><br><span class="line"></span><br><span class="line">      <span class="comment">// Note: The comments on the `throw` lines are intentional, they show</span></span><br><span class="line">      <span class="comment">// up in Node's output if this results in an unhandled exception.</span></span><br><span class="line">      <span class="keyword">throw</span> er; <span class="comment">// Unhandled 'error' event</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">let</span> stringifiedEr;</span><br><span class="line">    <span class="keyword">const</span> &#123; inspect &#125; = <span class="built_in">require</span>(<span class="string">'internal/util/inspect'</span>);</span><br><span class="line">    <span class="keyword">try</span> &#123;</span><br><span class="line">      stringifiedEr = inspect(er);</span><br><span class="line">    &#125; <span class="keyword">catch</span> &#123;</span><br><span class="line">      stringifiedEr = er;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// At least give some kind of context to the user</span></span><br><span class="line">    <span class="keyword">const</span> errors = lazyErrors();</span><br><span class="line">    <span class="keyword">const</span> err = <span class="keyword">new</span> errors.ERR_UNHANDLED_ERROR(stringifiedEr);</span><br><span class="line">    err.context = er;</span><br><span class="line">    <span class="keyword">throw</span> err; <span class="comment">// Unhandled 'error' event</span></span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">const</span> handler = events[type];</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (handler === <span class="literal">undefined</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">false</span>;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">if</span> (<span class="keyword">typeof</span> handler === <span class="string">'function'</span>) &#123;</span><br><span class="line">    <span class="built_in">Reflect</span>.apply(handler, <span class="keyword">this</span>, args);</span><br><span class="line">  &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    <span class="keyword">const</span> len = handler.length;</span><br><span class="line">    <span class="keyword">const</span> listeners = arrayClone(handler, len);</span><br><span class="line">    <span class="keyword">for</span> (<span class="keyword">var</span> i = <span class="number">0</span>; i &lt; len; ++i)</span><br><span class="line">      <span class="built_in">Reflect</span>.apply(listeners[i], <span class="keyword">this</span>, args);</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<h4 id="事件解绑-removeListener-removeAllListeners"><a href="#事件解绑-removeListener-removeAllListeners" class="headerlink" title="事件解绑(removeListener, removeAllListeners)"></a>事件解绑(removeListener, removeAllListeners)</h4><p>事件解绑比较简单，不用解释太多区分下单点监听器，还是数组类型监听器列表，另外注意下once监听器的特殊性就没问题了。</p>
+<figure class="highlight js"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br></pre></td><td class="code"><pre><span class="line">/ Emits a <span class="string">'removeListener'</span> event <span class="keyword">if</span> and only <span class="keyword">if</span> the listener was removed.</span><br><span class="line">EventEmitter.prototype.removeListener =</span><br><span class="line">    <span class="function"><span class="keyword">function</span> <span class="title">removeListener</span>(<span class="params">type, listener</span>) </span>&#123;</span><br><span class="line">      <span class="keyword">var</span> list, <span class="comment">//type事件的监听器集合</span></span><br><span class="line">      		events, <span class="comment">//事件集合对象</span></span><br><span class="line">      		position, <span class="comment">//对应type事件的listener的位置</span></span><br><span class="line">      		i,</span><br><span class="line">      		originalListener;</span><br><span class="line"></span><br><span class="line">      checkListener(listener);</span><br><span class="line"></span><br><span class="line">      events = <span class="keyword">this</span>._events;</span><br><span class="line">      <span class="keyword">if</span> (events === <span class="literal">undefined</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">this</span>;</span><br><span class="line"></span><br><span class="line">      list = events[type];</span><br><span class="line">      <span class="keyword">if</span> (list === <span class="literal">undefined</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">this</span>;</span><br><span class="line">		<span class="comment">//这边第二个条件是针对once绑定的监听函数</span></span><br><span class="line">      <span class="keyword">if</span> (list === listener || list.listener === listener) &#123;</span><br><span class="line">        <span class="keyword">if</span> (--<span class="keyword">this</span>._eventsCount === <span class="number">0</span>)</span><br><span class="line">          <span class="keyword">this</span>._events = <span class="built_in">Object</span>.create(<span class="literal">null</span>);</span><br><span class="line">        <span class="keyword">else</span> &#123;</span><br><span class="line">          <span class="keyword">delete</span> events[type];</span><br><span class="line">          <span class="keyword">if</span> (events.removeListener)</span><br><span class="line">            <span class="keyword">this</span>.emit(<span class="string">'removeListener'</span>, type, list.listener || listener);</span><br><span class="line">        &#125;</span><br><span class="line">      &#125; <span class="keyword">else</span> <span class="keyword">if</span> (<span class="keyword">typeof</span> list !== <span class="string">'function'</span>) &#123;</span><br><span class="line">        position = <span class="number">-1</span>;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> (i = list.length - <span class="number">1</span>; i &gt;= <span class="number">0</span>; i--) &#123;</span><br><span class="line">          <span class="keyword">if</span> (list[i] === listener || list[i].listener === listener) &#123;</span><br><span class="line">            originalListener = list[i].listener;</span><br><span class="line">            position = i;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">          &#125;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (position &lt; <span class="number">0</span>)</span><br><span class="line">          <span class="keyword">return</span> <span class="keyword">this</span>;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (position === <span class="number">0</span>)</span><br><span class="line">          list.shift();</span><br><span class="line">        <span class="keyword">else</span> &#123;</span><br><span class="line">          <span class="keyword">if</span> (spliceOne === <span class="literal">undefined</span>)</span><br><span class="line">            spliceOne = <span class="built_in">require</span>(<span class="string">'internal/util'</span>).spliceOne;</span><br><span class="line">          spliceOne(list, position);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (list.length === <span class="number">1</span>)<span class="comment">//只剩一个监听函数，转为单点</span></span><br><span class="line">          events[type] = list[<span class="number">0</span>];</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (events.removeListener !== <span class="literal">undefined</span>)</span><br><span class="line">          <span class="keyword">this</span>.emit(<span class="string">'removeListener'</span>, type, originalListener || listener);</span><br><span class="line">      &#125;</span><br><span class="line"></span><br><span class="line">      <span class="keyword">return</span> <span class="keyword">this</span>;</span><br><span class="line">    &#125;;</span><br></pre></td></tr></table></figure>
+<p>删除所有监听器分两种情况：有事件名称参数，没有事件名称参数。同时需要考虑有无监听removeListener事件。如果有removeListener事件，需调用removeListener函数触发removeListener事件。</p>
+<figure class="highlight js"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line">EventEmitter.prototype.removeAllListeners =</span><br><span class="line">    <span class="function"><span class="keyword">function</span> <span class="title">removeAllListeners</span>(<span class="params">type</span>) </span>&#123;</span><br><span class="line">      <span class="keyword">var</span> listeners, events, i;</span><br><span class="line"></span><br><span class="line">      events = <span class="keyword">this</span>._events;</span><br><span class="line">      <span class="keyword">if</span> (events === <span class="literal">undefined</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">this</span>;</span><br><span class="line"></span><br><span class="line">      <span class="comment">// Not listening for removeListener, no need to emit</span></span><br><span class="line">      <span class="keyword">if</span> (events.removeListener === <span class="literal">undefined</span>) &#123;<span class="comment">//没有removeListener事件监听</span></span><br><span class="line">        <span class="keyword">if</span> (<span class="built_in">arguments</span>.length === <span class="number">0</span>) &#123;<span class="comment">//清空所有事件</span></span><br><span class="line">          <span class="keyword">this</span>._events = <span class="built_in">Object</span>.create(<span class="literal">null</span>);</span><br><span class="line">          <span class="keyword">this</span>._eventsCount = <span class="number">0</span>;</span><br><span class="line">        &#125; <span class="keyword">else</span> <span class="keyword">if</span> (events[type] !== <span class="literal">undefined</span>) &#123;<span class="comment">//清空指定事件</span></span><br><span class="line">          <span class="keyword">if</span> (--<span class="keyword">this</span>._eventsCount === <span class="number">0</span>)</span><br><span class="line">            <span class="keyword">this</span>._events = <span class="built_in">Object</span>.create(<span class="literal">null</span>);</span><br><span class="line">          <span class="keyword">else</span></span><br><span class="line">            <span class="keyword">delete</span> events[type];</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">this</span>;</span><br><span class="line">      &#125;</span><br><span class="line"></span><br><span class="line">      <span class="comment">// Emit removeListener for all listeners on all events</span></span><br><span class="line">      <span class="keyword">if</span> (<span class="built_in">arguments</span>.length === <span class="number">0</span>) &#123;<span class="comment">//有事件监听，且删除所有事件</span></span><br><span class="line">        <span class="keyword">for</span> (<span class="keyword">const</span> key <span class="keyword">of</span> <span class="built_in">Object</span>.keys(events)) &#123;</span><br><span class="line">          <span class="keyword">if</span> (key === <span class="string">'removeListener'</span>) <span class="keyword">continue</span>;</span><br><span class="line">          <span class="keyword">this</span>.removeAllListeners(key);<span class="comment">//调用自身，清空指定事件</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">this</span>.removeAllListeners(<span class="string">'removeListener'</span>);</span><br><span class="line">        <span class="keyword">this</span>._events = <span class="built_in">Object</span>.create(<span class="literal">null</span>);</span><br><span class="line">        <span class="keyword">this</span>._eventsCount = <span class="number">0</span>;</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">this</span>;</span><br><span class="line">      &#125;</span><br><span class="line">		<span class="comment">//有事件监听，且删除指定事件</span></span><br><span class="line">      listeners = events[type];</span><br><span class="line"></span><br><span class="line">      <span class="keyword">if</span> (<span class="keyword">typeof</span> listeners === <span class="string">'function'</span>) &#123;</span><br><span class="line">        <span class="keyword">this</span>.removeListener(type, listeners);</span><br><span class="line">      &#125; <span class="keyword">else</span> <span class="keyword">if</span> (listeners !== <span class="literal">undefined</span>) &#123;</span><br><span class="line">        <span class="comment">// LIFO order</span></span><br><span class="line">        <span class="keyword">for</span> (i = listeners.length - <span class="number">1</span>; i &gt;= <span class="number">0</span>; i--) &#123;</span><br><span class="line">          <span class="keyword">this</span>.removeListener(type, listeners[i]);</span><br><span class="line">        &#125;</span><br><span class="line">      &#125;</span><br><span class="line"></span><br><span class="line">      <span class="keyword">return</span> <span class="keyword">this</span>;</span><br><span class="line">    &#125;;</span><br></pre></td></tr></table></figure>
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+	<div class="article-tag tagcloud">
+		<i class="icon-price-tags icon"></i>
+		<ul class="article-tag-list">
+			 
+        		<li class="article-tag-list-item">
+        			<a href="javascript:void(0)" class="js-tag article-tag-list-link color5">node</a>
+        		</li>
+      		 
+        		<li class="article-tag-list-item">
+        			<a href="javascript:void(0)" class="js-tag article-tag-list-link color5">核心模块</a>
+        		</li>
+      		
+		</ul>
+	</div>
+
+      
+	<div class="article-category tagcloud">
+		<i class="icon-book icon"></i>
+		<ul class="article-tag-list">
+			 
+        		<li class="article-tag-list-item">
+        			<a href="/categories/核心源码//" class="article-tag-list-link color5">核心源码</a>
+        		</li>
+      		
+		</ul>
+	</div>
+
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2019/07/31/event源码来一波/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
+    <article id="post-sqlserver数据迁移" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2019/04/30/sqlserver数据迁移/">SQL Server数据迁移</a>
+    </h1>
+  
+
+        
+        <a href="/2019/04/30/sqlserver数据迁移/" class="archive-article-date">
+  	<time datetime="2019-04-30T09:32:59.000Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2019-04-30</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <p>SQL Server2012如何导出sql脚本并且还原SQL Server 2008数据库<br>由于要还原正式环境出现的bug，想要迁移正式数据库的数据到本地，做bug重现捕捉，才有了这篇文章。</p>
+<h3 id="背景介绍"><a href="#背景介绍" class="headerlink" title="背景介绍"></a>背景介绍</h3><p>正式数据库：阿里云上SQL Server 2012数据库<br>本地：SQL Server 2008数据库<br>试过查询语句另存为.txt，导入本地的时候需要每张表修改对应的数据类型，pass。<br>导出excel，缺失了一字段，而且需要安装一些插件，改配置信息，麻烦，pass。<br>最后通过导出sql脚本，实现了数据迁移，小白也能快速上手。<br>我是具体操作参考<a href="!https://www.cnblogs.com/seekdream/p/5723079.html">这里</a>，但是我</p>
+<h3 id="备份数据库"><a href="#备份数据库" class="headerlink" title="备份数据库"></a>备份数据库</h3><p><img src="https://images2015.cnblogs.com/blog/695641/201607/695641-20160731144916247-1131196553.png" alt="avatar"><br>1  选择某一个数据库，右键依次选择：任务==》生成脚本；</p>
+<p>2  选择要编写脚本的数据库对象，注意此处可以选择特定的数据库对象，我们可以选择我们需要备份的数据表。（这我只选择了表）</p>
+<p>3  在当前页面下面第一步选择高级选项，然后再选择输出的sql脚本的保存位置。</p>
+<p>4  高级选项中最重要的一步就是在”要编写的脚本的数据类型“中选择第一项“架构和数据”，这个默认是选择“仅限架构”，这个选项只会复制数据库的表结构而不会复制数据库的具体数据。<br>（这里我修改了”Script for Server Version”选项，改为SQL Server 2008，可以根据要移植的数据库版本修改对应的选项。并且”要编写的脚本的数据类型”我只选择了”数据”,因为本身已经有数据表了。）</p>
+<p>5  我们可以查看具体的导出的脚本和数据。</p>
+<h3 id="还原数据库"><a href="#还原数据库" class="headerlink" title="还原数据库"></a>还原数据库</h3><p>这里因为本地已经有数据库了，考虑表之前的外键依赖原因，没有一个个表清空数据，采用了新建了一个存储过程，运行该存储过程清空数据，一键搞定。(!慎用)<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">CREATE PROCEDURE sp_DeleteAllData</span><br><span class="line">AS</span><br><span class="line">EXEC sp_MSForEachTable &apos;ALTER TABLE ? NOCHECK CONSTRAINT ALL&apos;</span><br><span class="line">EXEC sp_MSForEachTable &apos;ALTER TABLE ? DISABLE TRIGGER ALL&apos;</span><br><span class="line">EXEC sp_MSForEachTable &apos;DELETE FROM ?&apos;</span><br><span class="line">EXEC sp_MSForEachTable &apos;ALTER TABLE ? CHECK CONSTRAINT ALL&apos;</span><br><span class="line">EXEC sp_MSForEachTable &apos;ALTER TABLE ? ENABLE TRIGGER ALL&apos;</span><br><span class="line">EXEC sp_MSFOREACHTABLE &apos;SELECT * FROM ?&apos;</span><br><span class="line">GO</span><br></pre></td></tr></table></figure></p>
+<p>接下来我也采用了和这里不一样的sqlcmd命令行，但是殊途同归，<br><code>sqlcmd -S localhost -d [your Database name] -i [your sql location]</code></p>
+<p>也可以采用原文操作：</p>
+<p>1   在一个新的数据库实例中创建一个一模一样的空的数据库，名称也为IGIS。</p>
+<p>2   通过：文件==》打开文件，打开刚开始导出的脚本文件。　　　　</p>
+<p>3  选择执行或者是按下F5来执行相应的操作，就可以将相应的数据库里面的数据表结构和数据导入到新的数据库中，最终完成数据库的备份工作。</p>
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+	<div class="article-tag tagcloud">
+		<i class="icon-price-tags icon"></i>
+		<ul class="article-tag-list">
+			 
+        		<li class="article-tag-list-item">
+        			<a href="javascript:void(0)" class="js-tag article-tag-list-link color1">sql server</a>
+        		</li>
+      		 
+        		<li class="article-tag-list-item">
+        			<a href="javascript:void(0)" class="js-tag article-tag-list-link color4">数据库</a>
+        		</li>
+      		
+		</ul>
+	</div>
+
+      
+	<div class="article-category tagcloud">
+		<i class="icon-book icon"></i>
+		<ul class="article-tag-list">
+			 
+        		<li class="article-tag-list-item">
+        			<a href="/categories/数据库//" class="article-tag-list-link color4">数据库</a>
+        		</li>
+      		
+		</ul>
+	</div>
+
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2019/04/30/sqlserver数据迁移/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
+    <article id="post-gulp全攻略" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2019/04/29/gulp全攻略/">gulp全攻略</a>
+    </h1>
+  
+
+        
+        <a href="/2019/04/29/gulp全攻略/" class="archive-article-date">
+  	<time datetime="2019-04-29T03:07:38.000Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2019-04-29</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <p>本质来说，gulp是一个自动化任务管理工具，结合相关的插件，就变成了无比强大的构建工具。gulp使用的是nodejs中stream来读取和操作数据，相比grunt速度更快，而且无需写一大堆繁杂的配置参数，API也非常简单。</p>
+<p>入门参考看<a href="https://www.gulpjs.com.cn/docs/getting-started/" target="_blank" rel="noopener">这里</a><br>gulp插件汇总看<a href="https://gulpjs.com/plugins/" target="_blank" rel="noopener">这里</a></p>
+<h3 id="API介绍"><a href="#API介绍" class="headerlink" title="API介绍"></a>API介绍</h3><p>使用gulp，仅需知道4个API即可：gulp.task(),gulp.src(),gulp.dest(),gulp.watch()，所以很容易就能掌握，建议看一遍<a href="https://www.gulpjs.com.cn/docs/getting-started/" target="_blank" rel="noopener">官方文档</a>。<br>
+        
+          <a class="article-more-a" href="/2019/04/29/gulp全攻略/#more">more >></a>
+        
+      
+
+      
+    </p></div>
+    <div class="article-info article-info-index">
+      
+      
+	<div class="article-tag tagcloud">
+		<i class="icon-price-tags icon"></i>
+		<ul class="article-tag-list">
+			 
+        		<li class="article-tag-list-item">
+        			<a href="javascript:void(0)" class="js-tag article-tag-list-link color5">gulp</a>
+        		</li>
+      		 
+        		<li class="article-tag-list-item">
+        			<a href="javascript:void(0)" class="js-tag article-tag-list-link color3">前端</a>
+        		</li>
+      		
+		</ul>
+	</div>
+
+      
+	<div class="article-category tagcloud">
+		<i class="icon-book icon"></i>
+		<ul class="article-tag-list">
+			 
+        		<li class="article-tag-list-item">
+        			<a href="/categories/阅//" class="article-tag-list-link color2">阅</a>
+        		</li>
+      		
+		</ul>
+	</div>
+
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2019/04/29/gulp全攻略/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
   
     <article id="post-node模块multi-child-process介绍" class="article article-type-post  article-index" itemscope itemprop="blogPost">
   <div class="article-inner">
@@ -279,6 +591,17 @@
 	</div>
 
       
+	<div class="article-category tagcloud">
+		<i class="icon-book icon"></i>
+		<ul class="article-tag-list">
+			 
+        		<li class="article-tag-list-item">
+        			<a href="/categories/阅//" class="article-tag-list-link color2">阅</a>
+        		</li>
+      		
+		</ul>
+	</div>
+
 
       
         <p class="article-more-link">
@@ -421,6 +744,26 @@
              
               <li class="article-tag-list-item">
                 <a href="javascript:void(0)" class="js-tag color5">multi-child-process</a>
+              </li>
+             
+              <li class="article-tag-list-item">
+                <a href="javascript:void(0)" class="js-tag color5">gulp</a>
+              </li>
+             
+              <li class="article-tag-list-item">
+                <a href="javascript:void(0)" class="js-tag color3">前端</a>
+              </li>
+             
+              <li class="article-tag-list-item">
+                <a href="javascript:void(0)" class="js-tag color1">sql server</a>
+              </li>
+             
+              <li class="article-tag-list-item">
+                <a href="javascript:void(0)" class="js-tag color4">数据库</a>
+              </li>
+             
+              <li class="article-tag-list-item">
+                <a href="javascript:void(0)" class="js-tag color5">核心模块</a>
               </li>
             
             <div class="clearfix"></div>
